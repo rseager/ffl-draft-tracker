@@ -12,11 +12,20 @@ const modalOverlay = document.getElementById('draft-modal-overlay');
 const modalPlayerName = document.getElementById('modal-player-name');
 const draftMyTeamBtn = document.getElementById('draft-my-team-btn');
 const draftOtherTeamBtn = document.getElementById('draft-other-team-btn');
+const teamRosterView = document.getElementById('team-roster-view');
+const clearDataBtn = document.getElementById('clear-data-btn');
 const localStorageKey = 'fflDraftData';
 const localStorageRookiesKey = 'rookieNames';
+const localStorageRosterKey = 'myTeamRoster';
 
 let allPlayers = [];
 let rookieNames = [];
+let myTeamRoster = {
+    'QB': [], 'RB': [], 'WR': [], 'TE': [], 'FLEX': [], 'K': [], 'DST': [], 'BN': []
+};
+const rosterSpots = {
+    'QB': 1, 'RB': 2, 'WR': 2, 'TE': 1, 'FLEX': 1, 'K': 1, 'DST': 1, 'BN': 6
+};
 
 const depthChartData = {
     "ARI": [
@@ -187,6 +196,8 @@ document.addEventListener('DOMContentLoaded', () => {
     rookieNames = loadFromLocalStorage(localStorageRookiesKey) || [];
 
     const storedPlayers = loadFromLocalStorage(localStorageKey);
+    const storedRoster = loadFromLocalStorage(localStorageRosterKey);
+    
     if (storedPlayers && storedPlayers.length > 0) {
         allPlayers = storedPlayers;
         updateRookieStatus();
@@ -196,7 +207,23 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMessage.textContent = 'No main rankings data found. Please select a CSV file to begin.';
     }
     
+    if (storedRoster) {
+        myTeamRoster = storedRoster;
+        displayMyTeam();
+    }
+    
     document.querySelector('[data-pos="ALL"]').classList.add('active');
+});
+
+clearDataBtn.addEventListener('click', () => {
+    if (confirm("Are you sure you want to clear all draft data? This cannot be undone.")) {
+        localStorage.removeItem(localStorageKey);
+        localStorage.removeItem(localStorageRosterKey);
+        allPlayers.forEach(p => p.draftedBy = 'None');
+        myTeamRoster = { 'QB': [], 'RB': [], 'WR': [], 'TE': [], 'FLEX': [], 'K': [], 'DST': [], 'BN': [] };
+        displayPlayers(allPlayers);
+        statusMessage.textContent = 'All draft data has been cleared.';
+    }
 });
 
 mainFileInput.addEventListener('change', (event) => {
@@ -255,7 +282,7 @@ draftInput.addEventListener('input', () => {
 
 autocompleteResults.addEventListener('click', (event) => {
     if (event.target.tagName === 'DIV') {
-        const playerName = event.target.textContent.replace(/ \.R$/, '').trim(); // Remove rookie indicator if present
+        const playerName = event.target.textContent.replace(/ <span class=\"rookie-indicator\">R<\/span>$/, '').trim();
         draftInput.value = playerName;
         autocompleteResults.style.display = 'none';
         draftButton.focus();
@@ -324,6 +351,7 @@ filterButtons.forEach(button => {
 function handleFilterClick(position) {
     playerTable.style.display = 'none';
     depthChartDiv.style.display = 'none';
+    teamRosterView.style.display = 'block';
 
     if (position === 'ALL') {
         displayPlayers(allPlayers);
@@ -336,7 +364,7 @@ function handleFilterClick(position) {
     } else if (position === 'DEPTH') {
         displayDepthChart();
     } else if (position === 'FLEX') {
-        const playersToDisplay = allPlayers.filter(p => p.pos.startsWith('RB') || p.pos.startsWith('WR'));
+        const playersToDisplay = allPlayers.filter(p => p.pos.startsWith('RB') || p.pos.startsWith('WR') || p.pos.startsWith('TE'));
         displayPlayers(playersToDisplay);
     } else {
         const playersToDisplay = allPlayers.filter(p => p.pos.startsWith(position));
@@ -377,16 +405,76 @@ function parseRookieCSV(csvText) {
     return names;
 }
 
+function addPlayerToMyTeam(player) {
+    // Standardize position for checking roster spots
+    const primaryPos = player.pos.startsWith('DST') || player.pos.startsWith('K')
+        ? player.pos.split(' ')[0]
+        : player.pos.substring(0, 2);
+
+    let added = false;
+    
+    // 1. Try to add to the primary position first
+    if (primaryPos in myTeamRoster && myTeamRoster[primaryPos].length < rosterSpots[primaryPos]) {
+        myTeamRoster[primaryPos].push(player);
+        added = true;
+    } 
+    
+    // 2. If not added, try to add to a FLEX spot (if eligible)
+    if (!added && (primaryPos === 'RB' || primaryPos === 'WR' || primaryPos === 'TE') && myTeamRoster['FLEX'].length < rosterSpots['FLEX']) {
+        myTeamRoster['FLEX'].push(player);
+        added = true;
+    }
+    
+    // 3. If still not added, place on the bench
+    if (!added) {
+        if (myTeamRoster['BN'].length < rosterSpots['BN']) {
+            myTeamRoster['BN'].push(player);
+        } else {
+            console.warn("Bench is full. Could not add player:", player.player);
+        }
+    }
+    
+    // Re-sort the roster to fill any empty primary or flex slots if a bench player is eligible
+    // This is an advanced step, for now we will just log the state
+    console.log("Player added. Current Roster State:", myTeamRoster);
+    
+    saveToLocalStorage(myTeamRoster, localStorageRosterKey);
+    displayMyTeam();
+}
+
+function removePlayerFromMyTeam(player) {
+    for (const pos in myTeamRoster) {
+        const index = myTeamRoster[pos].findIndex(p => p.player === player.player);
+        if (index !== -1) {
+            myTeamRoster[pos].splice(index, 1);
+            break;
+        }
+    }
+    saveToLocalStorage(myTeamRoster, localStorageRosterKey);
+    displayMyTeam();
+}
+
 function toggleDraftedStatus(name, team) {
     const player = allPlayers.find(p => p.player.toLowerCase() === name.toLowerCase());
 
     if (player) {
-        player.draftedBy = team;
+        if (team === 'None') {
+            player.draftedBy = 'None';
+            removePlayerFromMyTeam(player);
+            statusMessage.textContent = `${player.player} has been undrafted.`;
+        } else {
+            if (player.draftedBy === 'None') { // Only add if not already drafted
+                player.draftedBy = team;
+                if (team === 'My Team') {
+                    addPlayerToMyTeam(player);
+                }
+                statusMessage.textContent = `${player.player} has been drafted by ${team}.`;
+            } else {
+                statusMessage.textContent = `${player.player} is already drafted.`;
+            }
+        }
         saveToLocalStorage(allPlayers);
         
-        const action = team === 'None' ? "undrafted" : `drafted by ${team}`;
-        statusMessage.textContent = `${player.player} has been ${action}!`;
-
         const activeFilter = document.querySelector('.filter-button.active');
         if (activeFilter) {
             handleFilterClick(activeFilter.dataset.pos);
@@ -401,12 +489,13 @@ function loadFromLocalStorage(key = localStorageKey) {
         const storedData = localStorage.getItem(key);
         if (storedData) {
             const parsedData = JSON.parse(storedData);
-            // Ensure 'draftedBy' is correctly set to 'None' for all players on load
-            parsedData.forEach(player => {
-                if (!player.draftedBy) {
-                    player.draftedBy = 'None';
-                }
-            });
+            if (key === localStorageKey) {
+                parsedData.forEach(player => {
+                    if (!player.draftedBy) {
+                        player.draftedBy = 'None';
+                    }
+                });
+            }
             return parsedData;
         }
     } catch (e) {
@@ -462,6 +551,7 @@ function displayPlayers(players) {
     playerTable.style.display = 'table';
     depthChartDiv.style.display = 'none';
     playerTableBody.innerHTML = '';
+    teamRosterView.style.display = 'block';
 
     if (players.length === 0) {
         playerTableBody.innerHTML = '<tr><td colspan="11">No player data found.</td></tr>';
@@ -496,6 +586,7 @@ function displayPlayers(players) {
         `;
         playerTableBody.appendChild(row);
     });
+    displayMyTeam();
 }
 
 function displayAutocompleteResults(players) {
@@ -517,6 +608,7 @@ function displayDepthChart() {
     playerTable.style.display = 'none';
     depthChartDiv.style.display = 'block';
     depthChartDiv.innerHTML = '';
+    teamRosterView.style.display = 'none';
     
     const teams = Object.keys(depthChartData);
     const positions = ['Running Backs', 'Wide Receivers', 'Tight Ends'];
@@ -536,7 +628,6 @@ function displayDepthChart() {
         
         htmlContent += `<tbody>`;
         
-        // Starter row
         htmlContent += `<tr class="starter-row"><td>Starter</td>`;
         positions.forEach(pos => {
             const entry = depthChartData[team].find(e => e.position === pos);
@@ -547,7 +638,6 @@ function displayDepthChart() {
         });
         htmlContent += `</tr>`;
         
-        // Handcuff row
         htmlContent += `<tr class="handcuff-row"><td>Handcuff</td>`;
         positions.forEach(pos => {
             const entry = depthChartData[team].find(e => e.position === pos);
@@ -562,4 +652,67 @@ function displayDepthChart() {
     });
     
     depthChartDiv.innerHTML = htmlContent;
+}
+
+function displayMyTeam() {
+    teamRosterView.innerHTML = '';
+    teamRosterView.style.display = 'block';
+
+    let htmlContent = '<h2>My Team</h2>';
+
+    // Roster Spots - Starters
+    htmlContent += '<h3>Starters</h3>';
+    
+    // We will use this to track which players have been displayed
+    const playersToDisplay = { ...myTeamRoster };
+    
+    // Dynamically render Starters from the rosterSpots constant
+    // This is more robust than a hard-coded list
+    for (const pos in rosterSpots) {
+        if (pos !== 'BN') { // BN is for bench
+            for (let i = 0; i < rosterSpots[pos]; i++) {
+                const player = playersToDisplay[pos][i];
+                const playerName = player ? player.player : `Empty ${pos}`;
+                const playerInfo = player ? `(${player.team}, ${player.pos})` : '';
+                const draftedClass = player ? '' : 'roster-empty-slot';
+
+                htmlContent += `
+                    <div class="roster-position roster-starter">
+                        <strong>${pos.toUpperCase()}:</strong>
+                        <span class="player-name ${draftedClass}">${playerName}</span>
+                        <span class="player-info">${playerInfo}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    // Bench
+    htmlContent += '<h3 class="roster-bench-header">Bench</h3>';
+    htmlContent += '<div class="roster-bench">';
+    
+    // Dynamically render Bench players
+    if (myTeamRoster['BN'].length > 0) {
+        myTeamRoster['BN'].forEach(player => {
+            htmlContent += `
+                <div class="roster-position">
+                    <span class="player-name">${player.player}</span>
+                    <span class="player-info">(${player.team}, ${player.pos})</span>
+                </div>
+            `;
+        });
+    }
+
+    // Add empty bench slots to fill out the roster
+    const benchSlotsToFill = rosterSpots['BN'] - myTeamRoster['BN'].length;
+    for (let i = 0; i < benchSlotsToFill; i++) {
+        htmlContent += `
+            <div class="roster-position roster-empty-slot">
+                <span class="player-name">Empty BN</span>
+            </div>
+        `;
+    }
+    htmlContent += '</div>';
+
+    teamRosterView.innerHTML = htmlContent;
 }
