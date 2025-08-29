@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FFL Draft Tracker</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <h1>FFL Draft Tracker</h1>
+
+    <div id="file-input-container">
+        <div>
+            <label for="csv-file">Select Main Rankings CSV:</label>
+            <input type="file" id="csv-file" accept=".csv" />
+        </div>
+        <div style="margin-top: 10px;">
+            <label for="rookie-csv-file">Select Rookie Rankings CSV:</label>
+            <input type="file" id="rookie-csv-file" accept=".csv" />
+        </div>
+    </div>
+
+    <div id="draft-input-container">
+        <label for="draft-player-input">Draft a player:</label>
+        <div id="draft-player-input-wrapper">
+            <input type="text" id="draft-player-input" placeholder="e.g., Ja'Marr Chase" autocomplete="off" />
+            <div id="autocomplete-results" class="autocomplete-dropdown" style="display: none;"></div>
+        </div>
+        <button id="draft-player-button">Draft</button>
+    </div>
+
+    <div id="position-filters" style="margin-bottom: 20px;">
+        <button class="filter-button" data-pos="ALL">All Players</button>
+        <button class="filter-button" data-pos="ROOKIES">Rookies</button>
+        <button class="filter-button" data-pos="DEPTH">Depth Chart</button>
+        <button class="filter-button" data-pos="QB">QB</button>
+        <button class="filter-button" data-pos="RB">RB</button>
+        <button class="filter-button" data-pos="WR">WR</button>
+        <button class="filter-button" data-pos="TE">TE</button>
+        <button class="filter-button" data-pos="FLEX">FLEX</button>
+        <button class="filter-button" data-pos="K">K</button>
+        <button class="filter-button" data-pos="DST">DST</button>
+    </div>
+    
+    <p id="status-message">Loading data...</p>
+
+    <table id="player-table" style="display: none;">
+        <thead>
+            <tr>
+                <th>RK</th>
+                <th>TIERS</th>
+                <th>PLAYER</th>
+                <th>TEAM</th>
+                <th>POS</th>
+                <th>BYE</th>
+                <th>SOS</th>
+                <th>ECR vs ADP</th>
+                <th>AVG DIFF</th>
+                <th>OVER</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            </tbody>
+    </table>
+
+    <div id="depth-chart-view" style="display: none;">
+        </div>
+
+    <div id="draft-modal-overlay">
+        <div id="draft-modal">
+            <p>Who drafted <span id="modal-player-name"></span>?</p>
+            <button id="draft-my-team-btn">My Team</button>
+            <button id="draft-other-team-btn">Other Team</button>
+        </div>
+    </div>
+
+    <script src="js/main.js" defer></script>
+</body>
+</html>
